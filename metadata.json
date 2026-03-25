@@ -1,0 +1,7 @@
+{
+  "name": "Barbearia Premium - Elegância & Estilo",
+  "description": "Sistema completo de agendamento e gestão para barbearias de alto padrão.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
