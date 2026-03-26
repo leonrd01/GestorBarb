@@ -25,9 +25,59 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const filteredAppointments = appointments.filter(a => a.date === filterDate);
 
+  const clients = React.useMemo(() => {
+    type ClientEntry = {
+      id: string;
+      name: string;
+      phone: string;
+      appointments: Appointment[];
+      absences: number;
+      lastVisit?: { date: string; time: string };
+    };
+
+    const map = new Map<string, ClientEntry>();
+
+    appointments.forEach(app => {
+      const key = `${app.clientName}__${app.clientPhone}`;
+      let entry = map.get(key);
+      if (!entry) {
+        entry = {
+          id: app.clientId || key,
+          name: app.clientName,
+          phone: app.clientPhone,
+          appointments: [],
+          absences: 0,
+          lastVisit: undefined
+        };
+        map.set(key, entry);
+      }
+
+      entry.appointments.push(app);
+      if (app.status === 'Não compareceu') {
+        entry.absences += 1;
+      }
+
+      if (!entry.lastVisit) {
+        entry.lastVisit = { date: app.date, time: app.time };
+      } else {
+        const current = parse(`${app.date} ${app.time}`, 'yyyy-MM-dd HH:mm', new Date());
+        const existing = parse(`${entry.lastVisit.date} ${entry.lastVisit.time}`, 'yyyy-MM-dd HH:mm', new Date());
+        if (current.getTime() > existing.getTime()) {
+          entry.lastVisit = { date: app.date, time: app.time };
+        }
+      }
+
+    });
+
+    return Array.from(map.values()).map(c => ({
+      ...c,
+      status: c.absences >= 2 ? 'Bloqueado' : c.absences === 1 ? 'Alerta' : 'Normal'
+    }));
+  }, [appointments]);
+
   const stats = [
     { label: 'Hoje', value: filteredAppointments.length, icon: Calendar },
-    { label: 'Clientes', value: 124, icon: Users },
+    { label: 'Clientes', value: clients.length, icon: Users },
     { label: 'Receita', value: 'R$ 1.240', icon: Star },
   ];
 
@@ -142,6 +192,65 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   )) : (
                     <tr>
                       <td colSpan={6} className="py-12 text-center text-white/30 italic">Nenhum agendamento para esta data.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'clientes' && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card">
+            <div className="flex justify-between items-center mb-8">
+              <h2 className="text-xl font-serif">Base de Clientes</h2>
+              <div className="text-xs text-white/40">
+                Total: <span className="text-white font-bold">{clients.length}</span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-white/40">
+                    <th className="pb-4 font-bold">Cliente</th>
+                    <th className="pb-4 font-bold">Contato</th>
+                    <th className="pb-4 font-bold">Agendamentos</th>
+                    <th className="pb-4 font-bold">Faltas</th>
+                    <th className="pb-4 font-bold">Status</th>
+                    <th className="pb-4 font-bold text-right">Ultima Visita</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {clients.length > 0 ? clients
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(client => (
+                      <tr key={`${client.id}-${client.phone}`} className="group hover:bg-white/[0.02]">
+                        <td className="py-4 font-bold">{client.name}</td>
+                        <td className="py-4 text-sm text-white/70">{client.phone}</td>
+                        <td className="py-4 text-sm">{client.appointments.length}</td>
+                        <td className="py-4 text-sm">{client.absences}</td>
+                        <td className="py-4">
+                          <span className={cn(
+                            "text-[10px] uppercase font-bold px-2 py-1 rounded-full",
+                            client.status === 'Normal' ? "bg-green-500/20 text-green-400" :
+                            client.status === 'Alerta' ? "bg-yellow-500/20 text-yellow-400" :
+                            "bg-red-500/20 text-red-400"
+                          )}>
+                            {client.status}
+                          </span>
+                        </td>
+                        <td className="py-4 text-right text-sm">
+                          {client.lastVisit
+                            ? `${format(parse(client.lastVisit.date, 'yyyy-MM-dd', new Date()), "dd/MM")} - ${client.lastVisit.time}`
+                            : '--'}
+                        </td>
+                      </tr>
+                    )) : (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-white/30 italic">
+                        Nenhum cliente cadastrado ainda.
+                      </td>
                     </tr>
                   )}
                 </tbody>
