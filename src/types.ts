@@ -4,9 +4,8 @@ export interface Service {
   id: string;
   name: string;
   price: number;
-  duration: number; // in minutes
-  icon: string;
-  description?: string;
+  duration: string; // e.g. "45 min"
+  icon?: string;
 }
 
 export interface Barber {

@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { format, addDays, startOfToday, isSameDay, parse, isAfter, isBefore, addMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AlertCircle, Clock } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Service, Barber, Appointment } from '../types';
-import { SERVICES, BARBERS } from '../constants';
+import { BARBERS } from '../constants';
+import { fetchServices } from '../services/firestore';
 
 interface BookingSectionProps {
   onComplete: (app: Appointment) => void;
@@ -19,6 +20,36 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', phone: '', notes: '' });
+  const [services, setServices] = useState<Service[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesError, setServicesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadServices = async () => {
+      try {
+        const data = await fetchServices();
+        if (active) {
+          setServices(data);
+        }
+      } catch (err) {
+        if (active) {
+          setServicesError('Nao foi possivel carregar os servicos.');
+        }
+      } finally {
+        if (active) {
+          setServicesLoading(false);
+        }
+      }
+    };
+
+    loadServices();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Generate available times based on business hours
   const availableTimes = useMemo(() => {
@@ -100,9 +131,15 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
           <div className="p-8">
             {step === 1 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <h3 className="text-xl font-serif mb-6">Selecione o Serviço</h3>
+                <h3 className="text-xl font-serif mb-6">Selecione o Servico</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {SERVICES.map(s => (
+                  {servicesLoading && (
+                    <p className="text-white/50">Carregando servicos...</p>
+                  )}
+                  {servicesError && (
+                    <p className="text-red-400">{servicesError}</p>
+                  )}
+                  {!servicesLoading && !servicesError && services.map(s => (
                     <button
                       key={s.id}
                       onClick={() => setSelectedService(s)}
@@ -112,9 +149,12 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
                       )}
                     >
                       <div className="font-bold">{s.name}</div>
-                      <div className="text-gold text-sm">R$ {s.price.toFixed(2)} • {s.duration} min</div>
+                      <div className="text-gold text-sm">R$ {s.price.toFixed(2)} - {s.duration}</div>
                     </button>
                   ))}
+                  {!servicesLoading && !servicesError && services.length === 0 && (
+                    <p className="text-white/50">Nenhum servico cadastrado.</p>
+                  )}
                 </div>
                 <div className="mt-8 flex justify-end">
                   <button 
@@ -122,7 +162,7 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
                     onClick={() => setStep(2)}
                     className="btn-primary disabled:opacity-50"
                   >
-                    PRÓXIMO
+                    PROXIMO
                   </button>
                 </div>
               </motion.div>

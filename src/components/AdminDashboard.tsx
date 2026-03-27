@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Calendar, Users, Star, Plus, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Appointment, ServiceStatus } from '../types';
-import { SERVICES, BARBERS } from '../constants';
+import { Appointment, Service, ServiceStatus } from '../types';
+import { BARBERS } from '../constants';
+import { fetchServices } from '../services/firestore';
 
 interface AdminDashboardProps {
   appointments: Appointment[];
@@ -22,6 +23,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState('agenda');
   const [filterDate, setFilterDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [services, setServices] = useState<Service[]>([]);
+  const [servicesError, setServicesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadServices = async () => {
+      try {
+        const data = await fetchServices();
+        if (active) {
+          setServices(data);
+        }
+      } catch (err) {
+        if (active) {
+          setServicesError('Nao foi possivel carregar os servicos.');
+        }
+      }
+    };
+
+    loadServices();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredAppointments = appointments.filter(a => a.date === filterDate);
 
@@ -141,6 +167,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="bg-white/5 border border-white/10 rounded-lg p-2 text-sm outline-none focus:border-gold"
               />
             </div>
+           
 
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -162,7 +189,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="font-bold">{app.clientName}</div>
                         <div className="text-xs text-white/40">{app.clientPhone}</div>
                       </td>
-                      <td className="py-4 text-sm">{SERVICES.find(s => s.id === app.serviceId)?.name}</td>
+                      <td className="py-4 text-sm">{services.find(s => s.id === app.serviceId)?.name}</td>
                       <td className="py-4 text-sm">{BARBERS.find(b => b.id === app.barberId)?.name}</td>
                       <td className="py-4">
                         <span className={cn(

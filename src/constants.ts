@@ -1,11 +1,12 @@
 import { Service, Barber, BusinessHours, Client, Appointment } from './types';
 
+
 export const SERVICES: Service[] = [
-  { id: '1', name: 'Corte de Cabelo', price: 60, duration: 45, icon: 'Scissors', description: 'Corte moderno com acabamento premium.' },
-  { id: '2', name: 'Barba Completa', price: 40, duration: 30, icon: 'User', description: 'Modelagem de barba com toalha quente.' },
-  { id: '3', name: 'Sobrancelha', price: 20, duration: 15, icon: 'Eye', description: 'Design de sobrancelha masculina.' },
-  { id: '4', name: 'Corte + Barba', price: 90, duration: 75, icon: 'Zap', description: 'O combo completo para o seu visual.' },
-  { id: '5', name: 'Pacote Mensal', price: 200, duration: 60, icon: 'Calendar', description: '4 cortes por mês com desconto exclusivo.' },
+  { id: '1', name: 'Corte de Cabelo', price: 60, duration: '45 min', icon: 'Scissors' },
+  { id: '2', name: 'Barba Completa', price: 40, duration: '30 min', icon: 'User' },
+  { id: '3', name: 'Sobrancelha', price: 20, duration: '15 min', icon: 'Eye' },
+  { id: '4', name: 'Corte + Barba', price: 90, duration: '75 min', icon: 'Zap' },
+  { id: '5', name: 'Pacote Mensal', price: 200, duration: '60 min', icon: 'Calendar' },
 ];
 
 export const BARBERS: Barber[] = [
