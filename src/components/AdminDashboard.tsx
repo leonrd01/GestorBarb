@@ -167,6 +167,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="bg-white/5 border border-white/10 rounded-lg p-2 text-sm outline-none focus:border-gold"
               />
             </div>
+            {servicesError && (
+              <p className="text-red-400 text-sm mb-4">{servicesError}</p>
+            )}
            
 
             <div className="overflow-x-auto">
@@ -183,7 +186,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {filteredAppointments.length > 0 ? filteredAppointments.sort((a,b) => a.time.localeCompare(b.time)).map(app => (
-                    <tr key={app.id} className="group hover:bg-white/[0.02]">
+                    <tr key={app.id} className="group hover:bg-white/2">
                       <td className="py-4 font-bold text-gold">{app.time}</td>
                       <td className="py-4">
                         <div className="font-bold">{app.clientName}</div>
@@ -252,7 +255,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {clients.length > 0 ? clients
                     .sort((a, b) => a.name.localeCompare(b.name))
                     .map(client => (
-                      <tr key={`${client.id}-${client.phone}`} className="group hover:bg-white/[0.02]">
+                      <tr key={`${client.id}-${client.phone}`} className="group hover:bg-white/2">
                         <td className="py-4 font-bold">{client.name}</td>
                         <td className="py-4 text-sm text-white/70">{client.phone}</td>
                         <td className="py-4 text-sm">{client.appointments.length}</td>

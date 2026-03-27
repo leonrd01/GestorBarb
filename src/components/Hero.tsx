@@ -16,7 +16,7 @@ const Hero: React.FC<HeroProps> = ({ onBooking }) => {
           className="w-full h-full object-cover opacity-40 scale-110"
           referrerPolicy="no-referrer"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-t from-black via-black/40 to-transparent" />
       </div>
 
       <div className="container mx-auto px-6 relative z-10 text-center">
@@ -44,7 +44,7 @@ const Hero: React.FC<HeroProps> = ({ onBooking }) => {
       </div>
 
       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce">
-        <div className="w-[1px] h-16 bg-gradient-to-b from-gold to-transparent" />
+        <div className="w-px h-16 bg-linear-to-b from-gold to-transparent" />
       </div>
     </section>
   );

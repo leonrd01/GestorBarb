@@ -181,7 +181,7 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
                         key={i}
                         onClick={() => setSelectedDate(date)}
                         className={cn(
-                          "flex-shrink-0 w-16 h-20 rounded-xl border flex flex-col items-center justify-center transition-all",
+                          "shrink-0 w-16 h-20 rounded-xl border flex flex-col items-center justify-center transition-all",
                           isSelected ? "border-gold bg-gold/5 text-gold" : "border-white/10 hover:border-white/30"
                         )}
                       >
@@ -323,7 +323,7 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
                     </div>
 
                     <div className="mt-6 p-3 bg-dark-red/20 border border-dark-red/30 rounded-lg flex gap-3">
-                      <AlertCircle className="text-dark-red flex-shrink-0" size={18} />
+                      <AlertCircle className="text-dark-red shrink-0" size={18} />
                       <p className="text-[10px] text-white/70 leading-relaxed">
                         O cliente deve comparecer ou cancelar com no mínimo 1 hora de antecedência. Faltas sem aviso prévio podem gerar bloqueio de agendamentos futuros.
                       </p>
