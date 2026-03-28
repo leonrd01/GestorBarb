@@ -5,7 +5,6 @@ import { ptBR } from 'date-fns/locale';
 import { Calendar, Users, Star, Plus, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Appointment, Barber, BusinessHours, Service, ServiceStatus } from '../types';
-import { BUSINESS_HOURS } from '../constants';
 import {
   fetchAppointments,
   fetchBarberAvailability,
@@ -26,8 +25,15 @@ const AdminDashboard: React.FC = () => {
   const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState('');
-  const [businessHours, setBusinessHours] =
-    useState<BusinessHours>(BUSINESS_HOURS);
+  const [businessHours, setBusinessHours] = useState<BusinessHours>({
+    open: '',
+    close: '',
+    lunchStart: '',
+    lunchEnd: '',
+    daysOpen: [],
+    blockedDates: [],
+    manualBlockedSlots: [],
+  });
   const [availabilityError, setAvailabilityError] = useState<string | null>(
     null
   );
@@ -64,7 +70,7 @@ const AdminDashboard: React.FC = () => {
       .then((data) => {
         if (active) {
           setBarbers(data);
-          if (data.length === 1) {
+          if (data.length === 1 || !selectedBarberId) {
             setSelectedBarberId(data[0].id);
           }
         }
@@ -102,7 +108,15 @@ const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     if (!selectedBarberId) {
-      setBusinessHours(BUSINESS_HOURS);
+      setBusinessHours({
+        open: '',
+        close: '',
+        lunchStart: '',
+        lunchEnd: '',
+        daysOpen: [],
+        blockedDates: [],
+        manualBlockedSlots: [],
+      });
       setAvailabilityError(null);
       return;
     }
@@ -119,7 +133,15 @@ const AdminDashboard: React.FC = () => {
       .catch(() => {
         if (active) {
           setAvailabilityError('Nao foi possivel carregar a disponibilidade.');
-          setBusinessHours(BUSINESS_HOURS);
+          setBusinessHours({
+            open: '',
+            close: '',
+            lunchStart: '',
+            lunchEnd: '',
+            daysOpen: [],
+            blockedDates: [],
+            manualBlockedSlots: [],
+          });
         }
       });
 

@@ -11,7 +11,6 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../firebase";
-import { BARBERS, BUSINESS_HOURS } from "../constants";
 import type { Appointment, Barber, BusinessHours, Service } from "../types";
 
 type ServiceDoc = Partial<Omit<Service, "id">>;
@@ -60,23 +59,39 @@ export async function fetchServices(): Promise<Service[]> {
 type BarberDoc = Omit<Barber, "id">;
 
 export async function fetchBarbers(): Promise<Barber[]> {
-  try {
-    const snap = await getDocs(collection(db, "barbers"));
-    if (snap.empty) {
-      return BARBERS;
-    }
-    return snap.docs.map((docSnap) => {
-      const data = docSnap.data() as Partial<BarberDoc>;
-      return {
-        id: docSnap.id,
-        name: data.name ?? "Barbeiro",
-        avatar: data.avatar ?? "",
-        specialty: data.specialty ?? "",
-      };
-    });
-  } catch {
-    return BARBERS;
+  const snap = await getDocs(collection(db, "barbers"));
+  const barbers = snap.docs.map((docSnap) => {
+    const data = docSnap.data() as Partial<BarberDoc>;
+    return {
+      id: docSnap.id,
+      name: data.name ?? "Barbeiro",
+      avatar: data.avatar ?? "",
+      specialty: data.specialty ?? "",
+    };
+  });
+  if (barbers.length > 0) {
+    return barbers;
   }
+
+  const availabilitySnap = await getDocs(
+    collection(db, "barber_availability")
+  );
+  const seen = new Set<string>();
+  const fromAvailability: Barber[] = [];
+  availabilitySnap.docs.forEach((docSnap) => {
+    const data = docSnap.data() as { barberId?: string };
+    const barberId = data.barberId || docSnap.id;
+    if (!barberId || seen.has(barberId)) return;
+    seen.add(barberId);
+    fromAvailability.push({
+      id: barberId,
+      name: `Barbeiro ${barberId}`,
+      avatar: "",
+      specialty: "",
+    });
+  });
+
+  return fromAvailability;
 }
 
 type AppointmentDoc = Omit<Appointment, "id">;
@@ -247,23 +262,46 @@ export async function updateAppointmentStatus(
 export async function fetchBarberAvailability(
   barberId: string
 ): Promise<BusinessHours> {
+  const emptyHours: BusinessHours = {
+    open: "",
+    close: "",
+    lunchStart: "",
+    lunchEnd: "",
+    daysOpen: [],
+    blockedDates: [],
+    manualBlockedSlots: [],
+  };
   const ref = doc(db, "barber_availability", barberId);
   const snap = await getDoc(ref);
-  if (!snap.exists()) {
-    return BUSINESS_HOURS;
+  let data: Partial<BusinessHours> | null = null;
+
+  if (snap.exists()) {
+    data = snap.data() as Partial<BusinessHours>;
+  } else {
+    const q = query(
+      collection(db, "barber_availability"),
+      where("barberId", "==", barberId)
+    );
+    const fallbackSnap = await getDocs(q);
+    if (!fallbackSnap.empty) {
+      data = fallbackSnap.docs[0].data() as Partial<BusinessHours>;
+    }
   }
-  const data = snap.data() as Partial<BusinessHours>;
+
+  if (!data) {
+    return emptyHours;
+  }
   const rawDays = Array.isArray(data.daysOpen) ? data.daysOpen : [];
   const normalizedDays = rawDays
     .map((d) => (typeof d === "string" ? Number(d) : d))
     .filter((d) => typeof d === "number" && Number.isFinite(d) && d >= 0 && d <= 6);
   const daysOpen =
-    normalizedDays.length > 0 ? (normalizedDays as number[]) : BUSINESS_HOURS.daysOpen;
+    normalizedDays.length > 0 ? (normalizedDays as number[]) : [];
   return {
-    open: data.open ?? BUSINESS_HOURS.open,
-    close: data.close ?? BUSINESS_HOURS.close,
-    lunchStart: data.lunchStart ?? BUSINESS_HOURS.lunchStart,
-    lunchEnd: data.lunchEnd ?? BUSINESS_HOURS.lunchEnd,
+    open: data.open ?? "",
+    close: data.close ?? "",
+    lunchStart: data.lunchStart ?? "",
+    lunchEnd: data.lunchEnd ?? "",
     daysOpen,
     blockedDates: Array.isArray(data.blockedDates) ? data.blockedDates : [],
     manualBlockedSlots: Array.isArray(data.manualBlockedSlots)
@@ -279,7 +317,7 @@ export async function saveBarberAvailability(
   barberId: string,
   availability: BusinessHours
 ): Promise<void> {
-  await setDoc(doc(db, "barber_availability", barberId), availability, {
+  await setDoc(doc(db, "barber_availability", barberId), { ...availability, barberId }, {
     merge: true,
   });
 }

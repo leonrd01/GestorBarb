@@ -5,7 +5,6 @@ import { ptBR } from 'date-fns/locale';
 import { AlertCircle, Clock } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Service, Barber, Appointment, BusinessHours } from '../types';
-import { BUSINESS_HOURS } from '../constants';
 import {
   createAppointment,
   fetchBarberAvailability,
@@ -28,7 +27,15 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete }) => {
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', phone: '', notes: '' });
-  const [businessHours, setBusinessHours] = useState<BusinessHours>(BUSINESS_HOURS);
+  const [businessHours, setBusinessHours] = useState<BusinessHours>({
+    open: '',
+    close: '',
+    lunchStart: '',
+    lunchEnd: '',
+    daysOpen: [],
+    blockedDates: [],
+    manualBlockedSlots: [],
+  });
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -73,7 +80,7 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete }) => {
       .then((data) => {
         if (active) {
           setBarbers(data);
-          if (data.length === 1) {
+          if (data.length === 1 || !selectedBarber) {
             setSelectedBarber(data[0]);
           }
         }
@@ -92,7 +99,15 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete }) => {
   // Carrega a disponibilidade do barbeiro selecionado
   useEffect(() => {
     if (!selectedBarber) {
-      setBusinessHours(BUSINESS_HOURS);
+      setBusinessHours({
+        open: '',
+        close: '',
+        lunchStart: '',
+        lunchEnd: '',
+        daysOpen: [],
+        blockedDates: [],
+        manualBlockedSlots: [],
+      });
       setAvailabilityError(null);
       return;
     }
@@ -110,7 +125,15 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete }) => {
       .catch(() => {
         if (active) {
           setAvailabilityError('Nao foi possivel carregar a disponibilidade.');
-          setBusinessHours(BUSINESS_HOURS);
+          setBusinessHours({
+            open: '',
+            close: '',
+            lunchStart: '',
+            lunchEnd: '',
+            daysOpen: [],
+            blockedDates: [],
+            manualBlockedSlots: [],
+          });
         }
       })
       .finally(() => {
