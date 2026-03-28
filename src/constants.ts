@@ -10,9 +10,7 @@ export const SERVICES: Service[] = [
 ];
 
 export const BARBERS: Barber[] = [
-  { id: '1', name: 'Ricardo Silva', avatar: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop', specialty: 'Especialista em Degradê' },
-  { id: '2', name: 'André Santos', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop', specialty: 'Mestre Barbeiro' },
-  { id: '3', name: 'Lucas Oliveira', avatar: 'https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=100&h=100&fit=crop', specialty: 'Visagismo e Barba' },
+  { id: '1', name: 'Ricardo Silva', avatar: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop', specialty: 'Especialista em Degrade' },
 ];
 
 export const BUSINESS_HOURS: BusinessHours = {
@@ -52,27 +50,4 @@ export const MOCK_CLIENT: Client = {
   ]
 };
 
-export const MOCK_APPOINTMENTS: Appointment[] = [
-  {
-    id: 'a2',
-    clientId: 'c2',
-    clientName: 'João Pereira',
-    clientPhone: '(11) 98888-8888',
-    serviceId: '1',
-    barberId: '1',
-    date: new Date().toISOString().split('T')[0],
-    time: '10:00',
-    status: 'Confirmado',
-  },
-  {
-    id: 'a3',
-    clientId: 'c3',
-    clientName: 'Marcos Souza',
-    clientPhone: '(11) 97777-7777',
-    serviceId: '2',
-    barberId: '2',
-    date: new Date().toISOString().split('T')[0],
-    time: '11:30',
-    status: 'Reservado',
-  }
-];
+export const MOCK_APPOINTMENTS: Appointment[] = [];

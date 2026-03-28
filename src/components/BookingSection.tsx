@@ -4,26 +4,40 @@ import { format, addDays, startOfToday, isSameDay, parse, isAfter, isBefore, add
 import { ptBR } from 'date-fns/locale';
 import { AlertCircle, Clock } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Service, Barber, Appointment } from '../types';
-import { BARBERS } from '../constants';
-import { fetchServices } from '../services/firestore';
+import { Service, Barber, Appointment, BusinessHours } from '../types';
+import { BUSINESS_HOURS } from '../constants';
+import {
+  createAppointment,
+  fetchBarberAvailability,
+  fetchBarbers,
+  fetchServices,
+  subscribeAppointmentsForBarberDate,
+} from '../services/firestore';
 
 interface BookingSectionProps {
   onComplete: (app: Appointment) => void;
-  businessHours: any;
 }
 
-const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHours }) => {
+// Componente de agendamento: carrega servicos, barbeiros, disponibilidade e horarios
+// e permite ao cliente reservar um horario.
+const BookingSection: React.FC<BookingSectionProps> = ({ onComplete }) => {
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(startOfToday());
+  const [barbers, setBarbers] = useState<Barber[]>([]);
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', phone: '', notes: '' });
+  const [businessHours, setBusinessHours] = useState<BusinessHours>(BUSINESS_HOURS);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [servicesError, setServicesError] = useState<string | null>(null);
 
+  // Carrega a lista de servicos do Firestore
   useEffect(() => {
     let active = true;
 
@@ -51,8 +65,113 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
     };
   }, []);
 
-  // Generate available times based on business hours
+  // Carrega os barbeiros do Firestore (se houver apenas 1, seleciona automaticamente)
+  useEffect(() => {
+    let active = true;
+
+    fetchBarbers()
+      .then((data) => {
+        if (active) {
+          setBarbers(data);
+          if (data.length === 1) {
+            setSelectedBarber(data[0]);
+          }
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setBarbers([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Carrega a disponibilidade do barbeiro selecionado
+  useEffect(() => {
+    if (!selectedBarber) {
+      setBusinessHours(BUSINESS_HOURS);
+      setAvailabilityError(null);
+      return;
+    }
+
+    let active = true;
+    setAvailabilityLoading(true);
+    setAvailabilityError(null);
+
+    fetchBarberAvailability(selectedBarber.id)
+      .then((data) => {
+        if (active) {
+          setBusinessHours(data);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAvailabilityError('Nao foi possivel carregar a disponibilidade.');
+          setBusinessHours(BUSINESS_HOURS);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setAvailabilityLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedBarber]);
+
+  // Busca os agendamentos do barbeiro na data selecionada
+  useEffect(() => {
+    if (!selectedBarber) {
+      setAppointments([]);
+      return;
+    }
+
+    const dateStr = format(selectedDate, 'yyyy-MM-dd');
+    const unsubscribe = subscribeAppointmentsForBarberDate(
+      selectedBarber.id,
+      dateStr,
+      (data) => setAppointments(data),
+      () => setAppointments([])
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [selectedBarber, selectedDate]);
+
+  // Se a data atual nao for valida (fechado ou bloqueado), move para a proxima disponivel
+  useEffect(() => {
+    if (!selectedBarber) return;
+    const dateStr = format(selectedDate, 'yyyy-MM-dd');
+    const isOpenDay = businessHours.daysOpen.includes(selectedDate.getDay());
+    const isBlocked = businessHours.blockedDates.includes(dateStr);
+    if (isOpenDay && !isBlocked) {
+      return;
+    }
+
+    const start = startOfToday();
+    for (let i = 0; i < 14; i++) {
+      const date = addDays(start, i);
+      const checkStr = format(date, 'yyyy-MM-dd');
+      const open = businessHours.daysOpen.includes(date.getDay());
+      const blocked = businessHours.blockedDates.includes(checkStr);
+      if (open && !blocked) {
+        setSelectedDate(date);
+        break;
+      }
+    }
+  }, [businessHours, selectedBarber]);
+
+  // Gera os horarios disponiveis com base na disponibilidade e agendamentos
   const availableTimes = useMemo(() => {
+    if (!selectedBarber) {
+      return [];
+    }
     const times = [];
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
     
@@ -75,8 +194,9 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
         (slot: any) => slot.date === dateStr && slot.time === timeStr
       );
 
-      // Mock occupied times (in a real app, this would come from the appointments list)
-      const isOccupied = ['10:00', '14:30', '16:00'].includes(timeStr);
+      const isOccupied = appointments.some(
+        (app) => app.time === timeStr && app.status !== 'Cancelado'
+      );
 
       times.push({
         time: timeStr,
@@ -86,16 +206,19 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
       current = addMinutes(current, 30);
     }
     return times;
-  }, [selectedDate, businessHours]);
+  }, [selectedDate, businessHours, appointments]);
 
-  const handleConfirm = () => {
+  // Confirma o agendamento e salva no Firestore
+  const handleConfirm = async () => {
     if (!selectedService || !selectedBarber || !selectedTime) return;
     
-    const newAppointment: Appointment = {
-      id: Math.random().toString(36).substr(2, 9),
+    setBookingError(null);
+    const phoneNormalized = formData.phone.replace(/\D/g, '').trim();
+    const newAppointment: Omit<Appointment, 'id'> & { clientPhoneNormalized?: string } = {
       clientId: 'c1',
       clientName: formData.name,
       clientPhone: formData.phone,
+      clientPhoneNormalized: phoneNormalized,
       serviceId: selectedService.id,
       barberId: selectedBarber.id,
       date: format(selectedDate, 'yyyy-MM-dd'),
@@ -103,7 +226,13 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
       status: 'Reservado',
       notes: formData.notes
     };
-    onComplete(newAppointment);
+    try {
+      const saved = await createAppointment(newAppointment);
+      setAppointments((prev) => [...prev, saved]);
+      onComplete(saved);
+    } catch (err) {
+      setBookingError('Nao foi possivel confirmar o agendamento.');
+    }
   };
 
   return (
@@ -175,14 +304,24 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
                 <div className="flex gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar">
                   {[...Array(14)].map((_, i) => {
                     const date = addDays(startOfToday(), i);
+                    const dateStr = format(date, 'yyyy-MM-dd');
+                    const isOpenDay = businessHours.daysOpen.includes(date.getDay());
+                    const isBlocked = businessHours.blockedDates.includes(dateStr);
+                    const isDisabled = !selectedBarber || !isOpenDay || isBlocked;
                     const isSelected = isSameDay(date, selectedDate);
                     return (
                       <button
                         key={i}
-                        onClick={() => setSelectedDate(date)}
+                        disabled={isDisabled}
+                        onClick={() => {
+                          if (!isDisabled) {
+                            setSelectedDate(date);
+                          }
+                        }}
                         className={cn(
                           "shrink-0 w-16 h-20 rounded-xl border flex flex-col items-center justify-center transition-all",
-                          isSelected ? "border-gold bg-gold/5 text-gold" : "border-white/10 hover:border-white/30"
+                          isSelected ? "border-gold bg-gold/5 text-gold" : "border-white/10 hover:border-white/30",
+                          isDisabled && "opacity-30 cursor-not-allowed hover:border-white/10"
                         )}
                       >
                         <span className="text-[10px] uppercase font-bold">{format(date, 'EEE', { locale: ptBR })}</span>
@@ -192,27 +331,43 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
                   })}
                 </div>
 
-                <h4 className="text-sm font-bold uppercase tracking-widest text-white/50 mb-4">Barbeiros Disponíveis</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-                  {BARBERS.map(b => (
-                    <button
-                      key={b.id}
-                      onClick={() => setSelectedBarber(b)}
-                      className={cn(
-                        "p-3 rounded-xl border flex items-center gap-3 transition-all",
-                        selectedBarber?.id === b.id ? "border-gold bg-gold/5" : "border-white/10 hover:border-white/30"
-                      )}
-                    >
-                      <img src={b.avatar} alt={b.name} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
-                      <div className="text-left">
-                        <div className="text-sm font-bold">{b.name}</div>
-                        <div className="text-[10px] text-white/50">{b.specialty}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                {barbers.length > 1 && (
+                  <>
+                    <h4 className="text-sm font-bold uppercase tracking-widest text-white/50 mb-4">Barbeiros Disponiveis</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                      {barbers.map(b => (
+                        <button
+                          key={b.id}
+                          onClick={() => setSelectedBarber(b)}
+                          className={cn(
+                            "p-3 rounded-xl border flex items-center gap-3 transition-all",
+                            selectedBarber?.id === b.id ? "border-gold bg-gold/5" : "border-white/10 hover:border-white/30"
+                          )}
+                        >
+                          {b.avatar && (
+                            <img src={b.avatar} alt={b.name} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+                          )}
+                          <div className="text-left">
+                            <div className="text-sm font-bold">{b.name}</div>
+                            <div className="text-[10px] text-white/50">{b.specialty}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
 
-                <h4 className="text-sm font-bold uppercase tracking-widest text-white/50 mb-4">Horários</h4>
+                <h4 className="text-sm font-bold uppercase tracking-widest text-white/50 mb-4">Horarios</h4>
+                {availabilityLoading && (
+                  <p className="text-white/50 mb-4">Carregando disponibilidade...</p>
+                )}
+                {availabilityError && (
+                  <p className="text-red-400 mb-4">{availabilityError}</p>
+                )}
+                {!selectedBarber && (
+                  <p className="text-white/50 mb-4">Selecione um barbeiro para ver os horarios.</p>
+                )}
+
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                   {availableTimes.map(({ time, available, reason }) => (
                     <div key={time} className="relative group">
@@ -306,7 +461,7 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
                       </div>
                       <div className="flex justify-between">
                         <span className="text-white/50">Barbeiro:</span>
-                        <span className="font-bold">{selectedBarber?.name}</span>
+                        <span className="font-bold">Morcegão</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-white/50">Data:</span>
@@ -330,6 +485,10 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete, businessHou
                     </div>
                   </div>
                 </div>
+                {bookingError && (
+                  <p className="text-red-400 mt-6">{bookingError}</p>
+                )}
+
 
                 <div className="mt-8 flex justify-between">
                   <button onClick={() => setStep(2)} className="text-white/50 hover:text-white">VOLTAR</button>

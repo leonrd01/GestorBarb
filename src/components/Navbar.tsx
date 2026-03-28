@@ -117,6 +117,12 @@ const Navbar = ({ onNavigate, currentView, isAdmin, onLogout }: NavbarProps) => 
           >
             AGENDAR AGORA
           </button>
+          <button 
+            onClick={() => onNavigate('reservations')}
+            className="btn-outline py-2 px-6 text-[10px]"
+          >
+            MINHAS RESERVAS
+          </button>
         </nav>
 
         {/* Mobile Toggle */}
@@ -170,6 +176,12 @@ const Navbar = ({ onNavigate, currentView, isAdmin, onLogout }: NavbarProps) => 
               className="btn-primary w-full py-4"
             >
               AGENDAR AGORA
+            </button>
+            <button 
+              onClick={() => { onNavigate('reservations'); setIsMobileMenuOpen(false); }}
+              className="btn-outline w-full py-4"
+            >
+              MINHAS RESERVAS
             </button>
           </div>
         )}

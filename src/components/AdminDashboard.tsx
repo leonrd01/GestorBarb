@@ -4,27 +4,35 @@ import { format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Calendar, Users, Star, Plus, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Appointment, Service, ServiceStatus } from '../types';
-import { BARBERS } from '../constants';
-import { fetchServices } from '../services/firestore';
+import { Appointment, Barber, BusinessHours, Service, ServiceStatus } from '../types';
+import { BUSINESS_HOURS } from '../constants';
+import {
+  fetchAppointments,
+  fetchBarberAvailability,
+  fetchBarbers,
+  fetchServices,
+  saveBarberAvailability,
+  subscribeAppointments,
+  updateAppointmentStatus,
+} from '../services/firestore';
 
-interface AdminDashboardProps {
-  appointments: Appointment[];
-  onUpdateStatus: (id: string, status: ServiceStatus) => void;
-  businessHours: any;
-  onUpdateBusinessHours: (bh: any) => void;
-}
-
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
-  appointments, 
-  onUpdateStatus, 
-  businessHours, 
-  onUpdateBusinessHours 
-}) => {
+const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('agenda');
   const [filterDate, setFilterDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [services, setServices] = useState<Service[]>([]);
   const [servicesError, setServicesError] = useState<string | null>(null);
+  const [appointmentsState, setAppointmentsState] = useState<Appointment[]>([]);
+  const [appointmentsLoading, setAppointmentsLoading] = useState(true);
+  const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [selectedBarberId, setSelectedBarberId] = useState('');
+  const [businessHours, setBusinessHours] =
+    useState<BusinessHours>(BUSINESS_HOURS);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(
+    null
+  );
+  const [availabilitySaving, setAvailabilitySaving] = useState(false);
+  const [availabilitySuccess, setAvailabilitySuccess] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -49,9 +57,113 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
   }, []);
 
-  const filteredAppointments = appointments.filter(a => a.date === filterDate);
+  useEffect(() => {
+    let active = true;
+
+    fetchBarbers()
+      .then((data) => {
+        if (active) {
+          setBarbers(data);
+          if (data.length === 1) {
+            setSelectedBarberId(data[0].id);
+          }
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setBarbers([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setAppointmentsLoading(true);
+    setAppointmentsError(null);
+
+    const unsubscribe = subscribeAppointments(
+      (data) => {
+        setAppointmentsState(data);
+        setAppointmentsLoading(false);
+      },
+      () => {
+        setAppointmentsError('Nao foi possivel carregar os agendamentos.');
+        setAppointmentsLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedBarberId) {
+      setBusinessHours(BUSINESS_HOURS);
+      setAvailabilityError(null);
+      return;
+    }
+
+    let active = true;
+    setAvailabilityError(null);
+
+    fetchBarberAvailability(selectedBarberId)
+      .then((data) => {
+        if (active) {
+          setBusinessHours(data);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAvailabilityError('Nao foi possivel carregar a disponibilidade.');
+          setBusinessHours(BUSINESS_HOURS);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedBarberId]);
+
+  const handleUpdateStatus = async (id: string, status: ServiceStatus) => {
+    try {
+      await updateAppointmentStatus(id, status);
+      setAppointmentsState((prev) =>
+        prev.map((app) => (app.id === id ? { ...app, status } : app))
+      );
+    } catch (err) {
+      setAppointmentsError('Nao foi possivel atualizar o status.');
+    }
+  };
+
+  const updateBusinessHours = (next: BusinessHours) => {
+    setBusinessHours(next);
+  };
+
+  const handleSaveAvailability = async () => {
+    if (!selectedBarberId) return;
+    setAvailabilitySaving(true);
+    setAvailabilityError(null);
+    setAvailabilitySuccess(false);
+    try {
+      await saveBarberAvailability(selectedBarberId, businessHours);
+      setAvailabilitySuccess(true);
+    } catch (err) {
+      setAvailabilityError('Nao foi possivel salvar a disponibilidade.');
+    } finally {
+      setAvailabilitySaving(false);
+    }
+  };
+
+  const filteredAppointments = appointmentsState.filter(a => a.date === filterDate);
 
   const clients = React.useMemo(() => {
+    const normalizePhone = (value: string) =>
+      value.replace(/\D/g, '').trim();
+
     type ClientEntry = {
       id: string;
       name: string;
@@ -63,8 +175,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const map = new Map<string, ClientEntry>();
 
-    appointments.forEach(app => {
-      const key = `${app.clientName}__${app.clientPhone}`;
+    appointmentsState.forEach(app => {
+      const phoneKey = normalizePhone(app.clientPhone || '');
+      const key = phoneKey || app.clientId || app.clientName || 'unknown';
       let entry = map.get(key);
       if (!entry) {
         entry = {
@@ -76,6 +189,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           lastVisit: undefined
         };
         map.set(key, entry);
+      } else {
+        if (!entry.name && app.clientName) entry.name = app.clientName;
+        if (!entry.phone && app.clientPhone) entry.phone = app.clientPhone;
       }
 
       entry.appointments.push(app);
@@ -99,7 +215,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ...c,
       status: c.absences >= 2 ? 'Bloqueado' : c.absences === 1 ? 'Alerta' : 'Normal'
     }));
-  }, [appointments]);
+  }, [appointmentsState]);
 
   const stats = [
     { label: 'Hoje', value: filteredAppointments.length, icon: Calendar },
@@ -170,6 +286,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {servicesError && (
               <p className="text-red-400 text-sm mb-4">{servicesError}</p>
             )}
+            {appointmentsLoading && (
+              <p className="text-white/50 text-sm mb-4">Carregando agendamentos...</p>
+            )}
+            {appointmentsError && (
+              <p className="text-red-400 text-sm mb-4">{appointmentsError}</p>
+            )}
            
 
             <div className="overflow-x-auto">
@@ -193,7 +315,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="text-xs text-white/40">{app.clientPhone}</div>
                       </td>
                       <td className="py-4 text-sm">{services.find(s => s.id === app.serviceId)?.name}</td>
-                      <td className="py-4 text-sm">{BARBERS.find(b => b.id === app.barberId)?.name}</td>
+                      <td className="py-4 text-sm">Morcegão</td>
                       <td className="py-4">
                         <span className={cn(
                           "text-[10px] uppercase font-bold px-2 py-1 rounded-full",
@@ -208,8 +330,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <td className="py-4 text-right">
                         <select 
                           value={app.status}
-                          onChange={(e) => onUpdateStatus(app.id, e.target.value as ServiceStatus)}
-                          className="bg-white/5 border border-white/10 rounded p-1 text-xs outline-none"
+                          onChange={(e) => handleUpdateStatus(app.id, e.target.value as ServiceStatus)}
+                          className="bg-[#0f0f0f] text-white border border-white/10 rounded p-1 text-xs outline-none"
                         >
                           <option value="Reservado">Reservado</option>
                           <option value="Confirmado">Confirmado</option>
@@ -293,6 +415,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="glass-card">
               <h2 className="text-xl font-serif mb-6">Horário de Funcionamento</h2>
+              {barbers.length > 1 && (
+                <div className="mb-4">
+                  <label className="text-xs uppercase font-bold text-white/50 block mb-2">Barbeiro</label>
+                  <select
+                    value={selectedBarberId}
+                    onChange={(e) => setSelectedBarberId(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm outline-none focus:border-gold"
+                  >
+                    {barbers.map((barber) => (
+                      <option key={barber.id} value={barber.id}>
+                        {barber.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {availabilityError && (
+                <p className="text-red-400 text-sm mb-4">{availabilityError}</p>
+              )}
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -300,7 +441,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input 
                       type="time" 
                       value={businessHours.open}
-                      onChange={e => onUpdateBusinessHours({...businessHours, open: e.target.value})}
+                      onChange={e => updateBusinessHours({...businessHours, open: e.target.value})}
                       className="w-full bg-white/5 border border-white/10 rounded-lg p-3 focus:border-gold outline-none"
                     />
                   </div>
@@ -309,7 +450,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input 
                       type="time" 
                       value={businessHours.close}
-                      onChange={e => onUpdateBusinessHours({...businessHours, close: e.target.value})}
+                      onChange={e => updateBusinessHours({...businessHours, close: e.target.value})}
                       className="w-full bg-white/5 border border-white/10 rounded-lg p-3 focus:border-gold outline-none"
                     />
                   </div>
@@ -321,7 +462,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input 
                       type="time" 
                       value={businessHours.lunchStart}
-                      onChange={e => onUpdateBusinessHours({...businessHours, lunchStart: e.target.value})}
+                      onChange={e => updateBusinessHours({...businessHours, lunchStart: e.target.value})}
                       className="w-full bg-white/5 border border-white/10 rounded-lg p-3 focus:border-gold outline-none"
                     />
                   </div>
@@ -330,7 +471,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input 
                       type="time" 
                       value={businessHours.lunchEnd}
-                      onChange={e => onUpdateBusinessHours({...businessHours, lunchEnd: e.target.value})}
+                      onChange={e => updateBusinessHours({...businessHours, lunchEnd: e.target.value})}
                       className="w-full bg-white/5 border border-white/10 rounded-lg p-3 focus:border-gold outline-none"
                     />
                   </div>
@@ -348,7 +489,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             const newDays = isActive 
                               ? businessHours.daysOpen.filter((d: number) => d !== i)
                               : [...businessHours.daysOpen, i];
-                            onUpdateBusinessHours({...businessHours, daysOpen: newDays});
+                            updateBusinessHours({...businessHours, daysOpen: newDays});
                           }}
                           className={cn(
                             "px-4 py-2 rounded-lg border text-xs font-bold transition-all",
@@ -379,7 +520,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       onClick={() => {
                         const input = document.getElementById('new-blocked-date') as HTMLInputElement;
                         if (input.value && !businessHours.blockedDates.includes(input.value)) {
-                          onUpdateBusinessHours({...businessHours, blockedDates: [...businessHours.blockedDates, input.value]});
+                          updateBusinessHours({...businessHours, blockedDates: [...businessHours.blockedDates, input.value]});
                           input.value = '';
                         }
                       }}
@@ -395,7 +536,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div key={date} className="flex justify-between items-center p-3 bg-white/5 rounded-lg border border-white/10">
                       <span className="text-sm font-bold">{format(parse(date, 'yyyy-MM-dd', new Date()), "dd 'de' MMMM", { locale: ptBR })}</span>
                       <button 
-                        onClick={() => onUpdateBusinessHours({...businessHours, blockedDates: businessHours.blockedDates.filter((d: string) => d !== date)})}
+                        onClick={() => updateBusinessHours({...businessHours, blockedDates: businessHours.blockedDates.filter((d: string) => d !== date)})}
                         className="text-red-400 hover:text-red-300"
                       >
                         <Trash2 size={16} />
@@ -415,7 +556,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       const dateInput = document.getElementById('manual-block-date') as HTMLInputElement;
                       const timeInput = document.getElementById('manual-block-time') as HTMLInputElement;
                       if (dateInput.value && timeInput.value) {
-                        onUpdateBusinessHours({
+                        updateBusinessHours({
                           ...businessHours, 
                           manualBlockedSlots: [...businessHours.manualBlockedSlots, { date: dateInput.value, time: timeInput.value }]
                         });
@@ -438,7 +579,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span>{slot.time}</span>
                       </div>
                       <button 
-                        onClick={() => onUpdateBusinessHours({...businessHours, manualBlockedSlots: businessHours.manualBlockedSlots.filter((_: any, idx: number) => idx !== i)})}
+                        onClick={() => updateBusinessHours({...businessHours, manualBlockedSlots: businessHours.manualBlockedSlots.filter((_: any, idx: number) => idx !== i)})}
                         className="text-red-400 hover:text-red-300"
                       >
                         <Trash2 size={14} />
@@ -447,6 +588,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   ))}
                 </div>
               </div>
+            </div>
+            <div className="lg:col-span-2 flex items-center justify-between">
+              <div className="text-xs">
+                {availabilitySuccess && (
+                  <span className="text-green-400">Disponibilidade salva com sucesso.</span>
+                )}
+                {availabilityError && (
+                  <span className="text-red-400">Erro ao salvar disponibilidade.</span>
+                )}
+              </div>
+              <button
+                onClick={handleSaveAvailability}
+                disabled={!selectedBarberId || availabilitySaving}
+                className="btn-primary disabled:opacity-50"
+              >
+                {availabilitySaving ? 'Salvando...' : 'Salvar Disponibilidade'}
+              </button>
             </div>
           </motion.div>
         )}

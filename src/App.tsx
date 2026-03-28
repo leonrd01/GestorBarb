@@ -1,12 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   CheckCircle2, 
   MessageCircle,
   Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Appointment, ServiceStatus } from './types';
-import { MOCK_APPOINTMENTS, BUSINESS_HOURS } from './constants';
+import { Appointment, BusinessHours } from './types';
 
 // --- Modular Components ---
 import Navbar from './components/Navbar';
@@ -19,25 +18,73 @@ import ContactSection from './components/ContactSection';
 import Footer from './components/Footer';
 import Login from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
+import ReservationsLookup from './components/ReservationsLookup';
+import { fetchBarberAvailability, fetchBarbers } from './services/firestore';
+
+const toMinutes = (value: string) => {
+  const [h, m] = value.split(':').map(Number);
+  return h * 60 + (m || 0);
+};
+
+const checkIsOpenNow = (availability: BusinessHours) => {
+  const now = new Date();
+  const day = now.getDay();
+  const dateStr = now.toISOString().split('T')[0];
+  if (!availability.daysOpen.includes(day)) return false;
+  if (availability.blockedDates.includes(dateStr)) return false;
+
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const openMin = toMinutes(availability.open);
+  const closeMin = toMinutes(availability.close);
+  if (nowMin < openMin || nowMin >= closeMin) return false;
+
+  const lunchStart = toMinutes(availability.lunchStart);
+  const lunchEnd = toMinutes(availability.lunchEnd);
+  if (nowMin >= lunchStart && nowMin < lunchEnd) return false;
+
+  return true;
+};
 
 export default function App() {
   const [view, setView] = useState('home');
-  const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS);
   const [showSuccess, setShowSuccess] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [businessHours, setBusinessHours] = useState(BUSINESS_HOURS);
+  const [isOpenNow, setIsOpenNow] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadAvailability = async () => {
+      try {
+        const barbers = await fetchBarbers();
+        const barberId = barbers[0]?.id;
+        if (!barberId) return;
+        const availability = await fetchBarberAvailability(barberId);
+        if (active) {
+          setIsOpenNow(checkIsOpenNow(availability));
+        }
+      } catch {
+        if (active) {
+          setIsOpenNow(false);
+        }
+      }
+    };
+
+    loadAvailability();
+    const interval = setInterval(loadAvailability, 60_000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const handleBookingComplete = (app: Appointment) => {
-    setAppointments([...appointments, app]);
     setShowSuccess(true);
     setTimeout(() => {
       setShowSuccess(false);
       setView('home');
     }, 3000);
-  };
-
-  const updateAppointmentStatus = (id: string, status: ServiceStatus) => {
-    setAppointments(appointments.map(a => a.id === id ? { ...a, status } : a));
   };
 
   const handleLogout = () => {
@@ -66,11 +113,10 @@ export default function App() {
             {/* Status Bar */}
             <div className="bg-gold/10 border-y border-gold/20 py-4">
               <div className="container mx-auto px-6 flex flex-wrap justify-center gap-8 text-xs font-bold tracking-widest uppercase">
-                <div className="flex items-center gap-2 text-green-400">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" /> ABERTO AGORA
+                <div className={isOpenNow ? "flex items-center gap-2 text-green-400" : "flex items-center gap-2 text-red-400"}>
+                  <div className={isOpenNow ? "w-2 h-2 bg-green-400 rounded-full animate-pulse" : "w-2 h-2 bg-red-400 rounded-full"} />
+                  {isOpenNow ? "ABERTO AGORA" : "FECHADO AGORA"}
                 </div>
-                <div className="text-white/60">PRÓXIMO HORÁRIO: <span className="text-gold">14:30</span></div>
-                <div className="text-white/60">VAGAS HOJE: <span className="text-gold">4</span></div>
               </div>
             </div>
 
@@ -89,8 +135,15 @@ export default function App() {
         {view === 'booking' && (
           <motion.div key="booking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="pt-24 min-h-screen">
-              <BookingSection onComplete={handleBookingComplete} businessHours={businessHours} />
+              <BookingSection onComplete={handleBookingComplete} />
             </div>
+            <Footer />
+          </motion.div>
+        )}
+
+        {view === 'reservations' && (
+          <motion.div key="reservations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <ReservationsLookup />
             <Footer />
           </motion.div>
         )}
@@ -103,12 +156,7 @@ export default function App() {
 
         {view === 'admin' && isLoggedIn && (
           <motion.div key="admin" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <AdminDashboard 
-              appointments={appointments} 
-              onUpdateStatus={updateAppointmentStatus} 
-              businessHours={businessHours}
-              onUpdateBusinessHours={setBusinessHours}
-            />
+            <AdminDashboard />
           </motion.div>
         )}
       </AnimatePresence>
