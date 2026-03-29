@@ -40,6 +40,7 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete }) => {
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<{ name?: string; phone?: string; notes?: string }>({});
   const [services, setServices] = useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [servicesError, setServicesError] = useState<string | null>(null);
@@ -231,23 +232,92 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete }) => {
     return times;
   }, [selectedDate, businessHours, appointments]);
 
+  const normalizeName = (value: string) => value.replace(/\s+/g, ' ').trim();
+  const normalizePhoneDigits = (value: string) => value.replace(/\D/g, '').trim();
+
+  const getNameError = (value: string) => {
+    const normalized = normalizeName(value);
+    if (!normalized) {
+      return 'Informe seu nome completo.';
+    }
+    if (normalized.length < 3) {
+      return 'O nome deve ter pelo menos 3 caracteres.';
+    }
+    return undefined;
+  };
+
+  const getPhoneError = (value: string) => {
+    const phoneDigits = normalizePhoneDigits(value);
+    if (!phoneDigits) {
+      return 'Informe um telefone para contato.';
+    }
+    if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+      return 'Telefone invalido. Use DDD + numero.';
+    }
+    return undefined;
+  };
+
+  const getNotesError = (value: string) => {
+    if (value.trim().length > 300) {
+      return 'As observacoes devem ter no maximo 300 caracteres.';
+    }
+    return undefined;
+  };
+
+  const validateForm = () => {
+    const nameError = getNameError(formData.name);
+    const phoneError = getPhoneError(formData.phone);
+    const notesError = getNotesError(formData.notes);
+    const errors: { name?: string; phone?: string; notes?: string } = {};
+
+    if (nameError) {
+      errors.name = nameError;
+    }
+    if (phoneError) {
+      errors.phone = phoneError;
+    }
+    if (notesError) {
+      errors.notes = notesError;
+    }
+
+    setFormErrors(errors);
+    return {
+      isValid: Object.keys(errors).length === 0,
+      nameNormalized: normalizeName(formData.name),
+      phoneDigits: normalizePhoneDigits(formData.phone),
+    };
+  };
+
   // Confirma o agendamento e salva no Firestore
   const handleConfirm = async () => {
     if (!selectedService || !selectedBarber || !selectedTime) return;
     
     setBookingError(null);
-    const phoneNormalized = formData.phone.replace(/\D/g, '').trim();
+    const { isValid, nameNormalized, phoneDigits } = validateForm();
+    if (!isValid) {
+      setBookingError('Corrija os campos destacados antes de confirmar.');
+      return;
+    }
+
+    const slotAvailable = availableTimes.some(
+      (slot) => slot.time === selectedTime && slot.available
+    );
+    if (!slotAvailable) {
+      setBookingError('Este horario nao esta mais disponivel. Selecione outro.');
+      return;
+    }
+
     const newAppointment: Omit<Appointment, 'id'> & { clientPhoneNormalized?: string } = {
       clientId: 'c1',
-      clientName: formData.name,
-      clientPhone: formData.phone,
-      clientPhoneNormalized: phoneNormalized,
+      clientName: nameNormalized,
+      clientPhone: formData.phone.trim(),
+      clientPhoneNormalized: phoneDigits,
       serviceId: selectedService.id,
       barberId: selectedBarber.id,
       date: format(selectedDate, 'yyyy-MM-dd'),
       time: selectedTime,
       status: 'Reservado',
-      notes: formData.notes
+      notes: formData.notes.trim()
     };
     try {
       const saved = await createAppointment(newAppointment);
@@ -441,20 +511,60 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete }) => {
                       <input 
                         type="text" 
                         value={formData.name}
-                        onChange={e => setFormData({...formData, name: e.target.value})}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg p-3 focus:border-gold outline-none"
+                        onChange={e => {
+                          setFormData({ ...formData, name: e.target.value });
+                          if (formErrors.name) {
+                            setFormErrors((prev) => ({ ...prev, name: undefined }));
+                          }
+                        }}
+                        onBlur={() => {
+                          if (formData.name) {
+                            setFormErrors((prev) => ({
+                              ...prev,
+                              name: getNameError(formData.name),
+                            }));
+                          }
+                        }}
+                        className={cn(
+                          "w-full bg-white/5 border rounded-lg p-3 outline-none",
+                          formErrors.name ? "border-dark-red/60 focus:border-dark-red" : "border-white/10 focus:border-gold"
+                        )}
                         placeholder="Seu nome"
+                        aria-invalid={!!formErrors.name}
                       />
+                      {formErrors.name && (
+                        <p className="text-xs text-dark-red mt-2">{formErrors.name}</p>
+                      )}
                     </div>
                     <div>
                       <label className="text-xs uppercase font-bold text-white/50 block mb-2">Telefone / WhatsApp</label>
                       <input 
                         type="text" 
                         value={formData.phone}
-                        onChange={e => setFormData({...formData, phone: e.target.value})}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg p-3 focus:border-gold outline-none"
+                        onChange={e => {
+                          setFormData({ ...formData, phone: e.target.value });
+                          if (formErrors.phone) {
+                            setFormErrors((prev) => ({ ...prev, phone: undefined }));
+                          }
+                        }}
+                        onBlur={() => {
+                          if (formData.phone) {
+                            setFormErrors((prev) => ({
+                              ...prev,
+                              phone: getPhoneError(formData.phone),
+                            }));
+                          }
+                        }}
+                        className={cn(
+                          "w-full bg-white/5 border rounded-lg p-3 outline-none",
+                          formErrors.phone ? "border-dark-red/60 focus:border-dark-red" : "border-white/10 focus:border-gold"
+                        )}
                         placeholder="(00) 00000-0000"
+                        aria-invalid={!!formErrors.phone}
                       />
+                      {formErrors.phone && (
+                        <p className="text-xs text-dark-red mt-2">{formErrors.phone}</p>
+                      )}
                     </div>
                     <div>
                       <label className="text-xs uppercase font-bold text-white/50 block mb-2">Cupom de Desconto</label>
@@ -468,10 +578,30 @@ const BookingSection: React.FC<BookingSectionProps> = ({ onComplete }) => {
                       <label className="text-xs uppercase font-bold text-white/50 block mb-2">Observações (Opcional)</label>
                       <textarea 
                         value={formData.notes}
-                        onChange={e => setFormData({...formData, notes: e.target.value})}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg p-3 focus:border-gold outline-none h-24"
+                        onChange={e => {
+                          setFormData({ ...formData, notes: e.target.value });
+                          if (formErrors.notes) {
+                            setFormErrors((prev) => ({ ...prev, notes: undefined }));
+                          }
+                        }}
+                        onBlur={() => {
+                          if (formData.notes) {
+                            setFormErrors((prev) => ({
+                              ...prev,
+                              notes: getNotesError(formData.notes),
+                            }));
+                          }
+                        }}
+                        className={cn(
+                          "w-full bg-white/5 border rounded-lg p-3 outline-none h-24",
+                          formErrors.notes ? "border-dark-red/60 focus:border-dark-red" : "border-white/10 focus:border-gold"
+                        )}
                         placeholder="Algum detalhe especial?"
+                        aria-invalid={!!formErrors.notes}
                       />
+                      {formErrors.notes && (
+                        <p className="text-xs text-dark-red mt-2">{formErrors.notes}</p>
+                      )}
                     </div>
                   </div>
 
